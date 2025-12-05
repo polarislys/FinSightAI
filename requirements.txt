@@ -1,8 +1,22 @@
+# 基础依赖
 python-dotenv==1.0.0
 openai==1.51.0
-pymilvus[lite]>=2.3.4
+numpy>=1.26.2
+requests>=2.31.0
+
+# LangChain
 langchain>=0.1.0
 langchain-core>=0.1.0
 langchain-text-splitters>=0.0.1
-numpy>=1.26.2
-requests>=2.31.0
+tiktoken>=0.5.0
+
+# 向量数据库
+pymilvus>=2.3.4
+
+# PDF解析 (MinerU)
+magic-pdf[full]>=0.7.0
+
+# 向量化模型
+FlagEmbedding>=1.2.0
+sentence-transformers>=2.2.0
+torch>=2.0.0
