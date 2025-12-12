@@ -20,3 +20,7 @@ magic-pdf[full]>=0.7.0
 FlagEmbedding>=1.2.0
 sentence-transformers>=2.2.0
 torch>=2.0.0
+
+# BM25 稀疏检索
+rank-bm25>=0.2.2
+jieba>=0.42.1

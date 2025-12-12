@@ -5,7 +5,7 @@ Sprint 1: 最小化 RAG 闭环
 import sys
 sys.path.append('.')
 
-from src.data_loader.pdf_parser import PDFParser
+from src.data_loader.pdf_parser_api import PDFParserAPI  # 改用 API 版本
 from src.data_loader.text_splitter import FinancialTextSplitter
 from src.retrieval.milvus_client import MilvusClient
 from pathlib import Path
@@ -26,7 +26,7 @@ class Sprint1Pipeline:
     """第一阶段：基础 RAG 管道"""
     
     def __init__(self):
-        self.pdf_parser = PDFParser("./data/processed")
+        self.pdf_parser = PDFParserAPI("./data/processed")  # 使用 API 解析器
         self.text_splitter = FinancialTextSplitter(chunk_size=512)
         self.milvus = MilvusClient("./data/milvus_lite.db")
         
