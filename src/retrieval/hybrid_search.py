@@ -20,6 +20,7 @@ class HybridSearcher:
         """
         self.vector_store = vector_store
         self.bm25_retriever = bm25_retriever
+        self.reranker = reranker  # 新增
         logger.info("✅ HybridSearcher 初始化完成")
     
     def rrf_fusion(
@@ -76,6 +77,7 @@ class HybridSearcher:
         self, 
         query: str, 
         top_k: int = 5,
+        use_rerank: bool = True,  # 新增
         vector_weight: float = 0.5,
         bm25_weight: float = 0.5,
         rrf_k: int = 60
@@ -108,10 +110,15 @@ class HybridSearcher:
         # 3. RRF 融合
         logger.info("   🔀 执行 RRF 融合...")
         fused_results = self.rrf_fusion(vector_results, bm25_results, k=rrf_k)
-        logger.info(f"   ✅ 融合完成，返回 Top-{top_k} 结果")
+        # 新增：Reranker 精排
+        if use_rerank and self.reranker:
+            logger.info("   🔄 执行 Reranker 精排...")
+            final_results = self.reranker.rerank(query, fused_results[:top_k * 2], top_k)
+        else:
+            final_results = fused_results[:top_k]
         
-        # 返回 Top-K
-        return fused_results[:top_k]
+        logger.info(f"   ✅ 融合完成，返回 Top-{top_k} 结果")
+        return final_results
     
     def get_stats(self) -> Dict:
         """获取统计信息"""

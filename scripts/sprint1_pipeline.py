@@ -8,6 +8,7 @@ sys.path.append('.')
 from src.data_loader.pdf_parser_api import PDFParserAPI  # 改用 API 版本
 from src.data_loader.text_splitter import FinancialTextSplitter
 from src.retrieval.milvus_client import MilvusClient
+from src.retrieval.reranker import Reranker
 from pathlib import Path
 import logging
 from openai import OpenAI
@@ -57,15 +58,20 @@ class Sprint1Pipeline:
         
         all_chunks = []
         for result in parsed_results:
-            md_path = result['markdown']  # 从字典中获取 markdown 文件路径
+            md_path = result['markdown']
             with open(md_path, 'r', encoding='utf-8') as f:
                 text = f.read()
+            
+            # 从 md_path 提取 PDF 原始文件名（目录名就是 PDF 文件名）
+            # 例如: data/processed/豫能控股_关于投资建设.../full.md
+            # 目录名: 豫能控股_关于投资建设...
+            pdf_name = Path(md_path).parent.name
             
             chunks = self.text_splitter.split_text(text)
             for i, chunk in enumerate(chunks):
                 all_chunks.append({
                     'text': chunk,
-                    'metadata': {'source': Path(md_path).name},
+                    'metadata': {'source': pdf_name},  # 使用 PDF 文件名
                     'chunk_id': i
                 })
         

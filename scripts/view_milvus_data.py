@@ -5,7 +5,7 @@ import json
 
 load_dotenv()
 
-def view_milvus_data():
+def view_milvus_data(limit: int = None):
     """查看 Milvus 数据库中的所有数据"""
     
     # 连接 Milvus
@@ -14,7 +14,7 @@ def view_milvus_data():
         print("✅ 连接到 Docker Milvus 成功")
     except:
         try:
-            client = MilvusClient(uri="./financial_rag.db")
+            client = MilvusClient(uri="./data/milvus_lite.db")
             print("✅ 连接到 Milvus Lite")
         except Exception as e:
             print(f"❌ 无法连接 Milvus: {e}")
@@ -35,24 +35,35 @@ def view_milvus_data():
         print(f"{'='*60}")
         
         try:
-            # 查询所有文档
+            # 先获取总数
+            stats = client.get_collection_stats(collection_name)
+            total_count = stats.get('row_count', 0)
+            print(f"📊 总文档数量: {total_count}")
+            
+            # 查询文档（如果没指定 limit，则查询全部，但最多显示前 20 条详情）
+            query_limit = limit if limit else total_count
             results = client.query(
                 collection_name=collection_name,
                 filter="id >= 0",
-                output_fields=["id", "text", "metadata"],
-                limit=100
+                output_fields=["id", "text", "source", "chunk_id"],  # 使用正确的字段名
+                limit=query_limit
             )
             
-            print(f"📊 文档数量: {len(results)}")
+            print(f"📄 查询到: {len(results)} 条")
             
             if not results:
                 print("⚠️ 集合为空")
                 continue
             
-            # 显示每个文档
-            for i, doc in enumerate(results, 1):
+            # 显示前 20 条详情
+            display_count = min(20, len(results))
+            print(f"\n--- 显示前 {display_count} 条文档 ---")
+            
+            for i, doc in enumerate(results[:display_count], 1):
                 print(f"\n--- 文档 {i} ---")
                 print(f"ID: {doc.get('id', 'N/A')}")
+                print(f"Chunk ID: {doc.get('chunk_id', 'N/A')}")
+                print(f"来源: {doc.get('source', 'N/A')}")
                 
                 text = doc.get('text', '')
                 if len(text) > 200:
@@ -60,14 +71,10 @@ def view_milvus_data():
                 else:
                     print(f"文本: {text}")
                 
-                metadata_str = doc.get('metadata', '{}')
-                try:
-                    metadata = json.loads(metadata_str)
-                    print(f"元数据: {metadata}")
-                except:
-                    print(f"元数据: {metadata_str}")
-                
                 print("-" * 60)
+            
+            if len(results) > display_count:
+                print(f"\n... 还有 {len(results) - display_count} 条文档未显示")
         
         except Exception as e:
             print(f"❌ 查询集合 {collection_name} 失败: {e}")
@@ -81,7 +88,7 @@ def delete_collection(collection_name):
     try:
         client = MilvusClient(uri="http://localhost:19530")
     except:
-        client = MilvusClient(uri="./financial_rag.db")
+        client = MilvusClient(uri="./data/milvus_lite.db")
     
     if client.has_collection(collection_name):
         client.drop_collection(collection_name)
@@ -97,5 +104,7 @@ if __name__ == "__main__":
             delete_collection(sys.argv[2])
         else:
             print("用法: python view_milvus_data.py delete <collection_name>")
+    elif len(sys.argv) > 1 and sys.argv[1].isdigit():
+        view_milvus_data(limit=int(sys.argv[1]))
     else:
         view_milvus_data()

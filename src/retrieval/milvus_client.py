@@ -105,23 +105,17 @@ class MilvusClient:
             data=entities
         )
         logger.info(f"✅ 插入 {len(entities)} 条记录")
-    
-    def search(self, query: str, top_k: int = 3) -> List[Dict]:
-        """
-        向量检索
-        
-        Returns:
-            [{'text': str, 'source': str, 'score': float}, ...]
-        """
+
+    def search(self, query: str, top_k: int = 5) -> List[Dict]:
+        """向量检索"""
         query_vec = self.embed_texts([query])[0]
-        
         results = self.client.search(
             collection_name=self.collection_name,
             data=[query_vec],
             limit=top_k,
-            output_fields=["text", "source"]
+            output_fields=["text", "source", "chunk_id"]
         )
-        
+            
         formatted_results = []
         for hit in results[0]:
             formatted_results.append({
@@ -129,5 +123,4 @@ class MilvusClient:
                 'source': hit['entity']['source'],
                 'score': hit['distance']
             })
-        
         return formatted_results
