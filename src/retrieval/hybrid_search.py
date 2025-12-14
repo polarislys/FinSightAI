@@ -10,13 +10,14 @@ logger = logging.getLogger(__name__)
 class HybridSearcher:
     """混合检索器（向量 + BM25 + RRF 融合）"""
     
-    def __init__(self, vector_store, bm25_retriever):
+    def __init__(self, vector_store, bm25_retriever, reranker=None):
         """
         初始化混合检索器
         
         Args:
             vector_store: 向量存储实例
             bm25_retriever: BM25 检索器实例
+            reranker: 重排序器实例（可选）
         """
         self.vector_store = vector_store
         self.bm25_retriever = bm25_retriever

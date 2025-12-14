@@ -71,6 +71,21 @@ def test_vector_only(milvus_client, query):
         print(f"文本: {res['text'][:150]}...")
         print()
 
+def test_hybrid_search(hybrid_searcher, query):
+    """测试混合检索（向量 + BM25 + RRF，不启用 rerank）"""
+    print(f"\n{'='*60}")
+    print(f"🔀 混合检索测试（向量 + BM25 + RRF）")
+    print(f"{'='*60}")
+    print(f"查询: {query}\n")
+
+    results = hybrid_searcher.search(query, top_k=5, use_rerank=False)
+
+    for i, res in enumerate(results, 1):
+        print(f"--- 结果 {i} (RRF 分数: {res.get('rrf_score', 0):.4f}) ---")
+        source = res.get('metadata', {}).get('source', res.get('source', 'N/A'))
+        print(f"来源: {source}")
+        print(f"文本: {res['text'][:150]}...")
+        print()
 
 def test_hybrid_with_rerank(hybrid_searcher, query):
     """测试混合检索 + Reranker"""

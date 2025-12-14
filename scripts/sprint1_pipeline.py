@@ -8,7 +8,6 @@ sys.path.append('.')
 from src.data_loader.pdf_parser_api import PDFParserAPI  # 改用 API 版本
 from src.data_loader.text_splitter import FinancialTextSplitter
 from src.retrieval.milvus_client import MilvusClient
-from src.retrieval.reranker import Reranker
 from pathlib import Path
 import logging
 from openai import OpenAI
