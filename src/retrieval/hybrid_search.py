@@ -11,18 +11,39 @@ class HybridSearcher:
     """混合检索器（向量 + BM25 + RRF 融合）"""
     
     def __init__(self, vector_store, bm25_retriever, reranker=None):
-        """
-        初始化混合检索器
-        
-        Args:
-            vector_store: 向量存储实例
-            bm25_retriever: BM25 检索器实例
-            reranker: 重排序器实例（可选）
-        """
         self.vector_store = vector_store
         self.bm25_retriever = bm25_retriever
-        self.reranker = reranker  # 新增
+        self.reranker = reranker
         logger.info("✅ HybridSearcher 初始化完成")
+    
+    def deduplicate_by_source(
+        self, 
+        results: List[Dict], 
+        max_per_source: int = 2
+    ) -> List[Dict]:
+        """
+        同源去重：每个来源（公司）最多保留 N 条
+        
+        Args:
+            results: 检索结果列表
+            max_per_source: 每个来源最多保留的条数
+        
+        Returns:
+            去重后的结果列表
+        """
+        source_count = {}
+        deduplicated = []
+        
+        for doc in results:
+            source = doc.get("source") or doc.get("metadata", {}).get("source", "")
+            # 提取公司名（假设格式是 "公司名_公告标题"）
+            company = source.split("_")[0] if "_" in source else source
+            
+            if source_count.get(company, 0) < max_per_source:
+                deduplicated.append(doc)
+                source_count[company] = source_count.get(company, 0) + 1
+        
+        return deduplicated
     
     def rrf_fusion(
         self, 
@@ -30,31 +51,16 @@ class HybridSearcher:
         bm25_results: List[Dict],
         k: int = 60
     ) -> List[Dict]:
-        """
-        RRF (Reciprocal Rank Fusion) 融合算法
-        
-        公式: RRF_score = Σ 1/(k + rank_i)
-        
-        Args:
-            vector_results: 向量检索结果 [{'text': str, 'score': float, ...}, ...]
-            bm25_results: BM25 检索结果 [{'text': str, 'score': float, 'rank': int}, ...]
-            k: RRF 参数，通常取 60
-        
-        Returns:
-            融合后的结果列表（按 RRF 分数降序）
-        """
-        # 构建文本到分数的映射
+        """RRF 融合算法"""
         rrf_scores = {}
         text_to_doc = {}
         
-        # 处理向量检索结果
         for rank, doc in enumerate(vector_results, start=1):
             text = doc['text']
             rrf_scores[text] = rrf_scores.get(text, 0) + 1 / (k + rank)
             if text not in text_to_doc:
                 text_to_doc[text] = doc
         
-        # 处理 BM25 检索结果
         for doc in bm25_results:
             text = doc['text']
             rank = doc.get('rank', 1)
@@ -62,10 +68,8 @@ class HybridSearcher:
             if text not in text_to_doc:
                 text_to_doc[text] = doc
         
-        # 按 RRF 分数排序
         sorted_texts = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)
         
-        # 构建最终结果
         fused_results = []
         for text, rrf_score in sorted_texts:
             doc = text_to_doc[text].copy()
@@ -78,24 +82,14 @@ class HybridSearcher:
         self, 
         query: str, 
         top_k: int = 5,
-        use_rerank: bool = True,  # 新增
+        use_rerank: bool = True,
+        use_diversity: bool = True,  # 新增：是否启用多样性去重
+        max_per_source: int = 2,     # 新增：每个来源最多保留条数
         vector_weight: float = 0.5,
         bm25_weight: float = 0.5,
         rrf_k: int = 60
     ) -> List[Dict]:
-        """
-        混合检索（向量 + BM25 + RRF 融合）
-        
-        Args:
-            query: 查询文本
-            top_k: 最终返回的结果数量
-            vector_weight: 向量检索的权重（暂未使用，RRF 自动平衡）
-            bm25_weight: BM25 检索的权重（暂未使用，RRF 自动平衡）
-            rrf_k: RRF 参数
-        
-        Returns:
-            融合后的检索结果
-        """
+        """混合检索"""
         logger.info(f"🔍 混合检索: {query}")
         
         # 1. 向量检索
@@ -111,14 +105,19 @@ class HybridSearcher:
         # 3. RRF 融合
         logger.info("   🔀 执行 RRF 融合...")
         fused_results = self.rrf_fusion(vector_results, bm25_results, k=rrf_k)
-        # 新增：Reranker 精排
+        
+        # 4. Reranker 精排
         if use_rerank and self.reranker:
             logger.info("   🔄 执行 Reranker 精排...")
-            final_results = self.reranker.rerank(query, fused_results[:top_k * 2], top_k)
-        else:
-            final_results = fused_results[:top_k]
+            fused_results = self.reranker.rerank(query, fused_results[:top_k * 2], top_k * 2)
         
-        logger.info(f"   ✅ 融合完成，返回 Top-{top_k} 结果")
+        # 5. 同源去重（新增）
+        if use_diversity:
+            logger.info(f"   🎯 执行同源去重（每来源最多 {max_per_source} 条）...")
+            fused_results = self.deduplicate_by_source(fused_results, max_per_source)
+        
+        final_results = fused_results[:top_k]
+        logger.info(f"   ✅ 融合完成，返回 Top-{len(final_results)} 结果")
         return final_results
     
     def get_stats(self) -> Dict:

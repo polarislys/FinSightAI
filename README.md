@@ -1,3 +1,19 @@
+1. 项目简介与核心价值 (Project Vision) [新增]
+FinSightAI 是一个面向金融从业者的上市公司智能尽调与研报生成助手。不同于通用的财经新闻检索，它专注于解析第一手官方公告与权威数据，旨在解决“海量披露文件阅读难、风险排查慢、研报撰写繁”的痛点。
+三大核心场景：
+企业风险哨兵：秒查未决诉讼、违规担保、股权质押等合规风险（基于公告）。
+重大事件追踪：实时捕捉中标、投资、高管变动等经营动作（基于公告+新闻）。
+深度研报生成：自动聚合财务数据、行业观点与舆情，生成结构化分析报告（基于研报+AkShare）。
+
+2. 数据层架构 (Data Layer) [修改]
+不再仅仅是 PDF 解析，而是构建 “四维金融数据湖”：
+非结构化数据 (Milvus)：
+A. 官方公告：利用 MinerU 解析 PDF，提取法律事实与风险事件。
+B. 券商研报：提取分析师观点、行业增速预测，作为生成风格参考 (Few-Shot)。
+C. 财经新闻：接入财联社/雪球数据，用于舆情监控与声誉风险分析。
+结构化数据 (SQL/AkShare)：
+D. 行情与财务：引入 AkShare 开源库，存储股价、PE/PB、营收同比等指标，支持 ToolCall 实时绘图与计算。
+
 ### 1. 基础设施与技术栈 (Infrastructure)
 
 - **核心框架**：Python + LangChain + LangGraph（编排）+ FastAPI（服务化）。
@@ -114,3 +130,63 @@
         - 如果评分 Pass -> 结束。
         - 如果评分 Fail -> 跳转回 ToolCall（联网或重新检索）-> 重新生成。
     - *产出：具备高可靠性、低幻觉的最终版 FinSight AI。*
+
+FastAPI 在你的 Sprint 计划中的演进:
+Sprint 1,(可选/简陋),可能只是一个 main.py 脚本在终端跑，或者极其简单的单接口，用来测试环境通不通。
+Sprint 2,检索 API,建立 /search 接口。输入 Query，FastAPI 调用 Milvus + BM25 + Rerank，返回 Top-K 文本段落（JSON格式）。这是为了方便调试检索效果，不涉及大模型生成。
+Sprint 3,对话 API,建立 /chat 接口。FastAPI 开始维护 Session（会话），接收用户 Query，调用 LLM 进行查询重写，然后生成答案。
+Sprint 4,Agent 服务化,建立 /workflow 接口。FastAPI 不再直接调 LLM，而是调用 LangGraph 编译好的 Graph 对象。支持流式输出。
+Sprint 5,生产级网关,加入了 API Key 鉴权、速率限制（Rate Limit，防止 Token 刷爆）、错误处理和日志记录。
+
+✅ 推荐：FinSightAI 的“渐进式” API 路线
+1. 现在（Sprint 2 结束/Sprint 3 开始）：调试型 API
+目的：你现在刚搞定混合检索和重排，你需要一个方便的工具来测试检索效果，而不是每次都改 python 代码去跑。
+
+你需要做的：马上写一个简单的 src/api/server.py。
+
+暴露接口：
+
+POST /v1/retrieve: 输入 query，返回检索效果。
+
+给谁用：给你自己用（Postman测试），或者写一个极其简单的 Streamlit 界面给自己调试。
+
+好处：确立了数据出入参的标准（JSON格式）。
+
+2. Sprint 3 阶段：对话型 API
+目的：你引入了 Contextualizer（历史回溯）和 Rewriter（查询重写），链路变长了。
+
+暴露接口：
+
+POST /v1/chat:
+
+入参：messages: [{"role":"user",...}, ...] (标准 OpenAI 格式)
+
+出参：answer: str, source_documents: list
+
+变化：这个时候你的 API 内部逻辑变复杂了，但对外部（前端）来说，还是一个简单的“问答接口”。
+
+关键点：此时前端可以介入开发了，他们只需要对接这个标准接口。
+
+3. Sprint 4 阶段：流式与任务型 API (最关键)
+目的：你引入了 LangGraph 和 Agent，回复速度变慢（因为要思考），而且可能有中间步骤（比如正在搜索、正在读图）。
+
+暴露接口：
+
+POST /v1/agent/stream: 支持 SSE (Server-Sent Events)。
+
+变化：
+
+不仅返回最终答案，还要实时推送中间状态（"正在思考...", "正在查询 Milvus...", "正在生成..."）。
+
+如果等到最后才做流式 API，你需要改动大量的底层代码，极其痛苦。所以这一步必须在 Sprint 4 同步进行。
+
+4. Sprint 5 阶段：生产级网关
+目的：提供给其他人（客户/同事）使用。
+
+暴露接口：
+
+增加 POST /v1/upload: 文件上传。
+
+增加 API Key 鉴权 (Authorization: Bearer sk-...)。
+
+变化：这时候才是真正的“包装”阶段，加日志、加限流、加计费。
