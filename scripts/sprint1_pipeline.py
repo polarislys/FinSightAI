@@ -7,8 +7,10 @@ sys.path.append('.')
 
 from src.data_loader.pdf_parser_api import PDFParserAPI  # 改用 API 版本
 from src.data_loader.text_splitter import FinancialTextSplitter
+from src.data_loader.chunk_processor import ChunkProcessor
 from src.retrieval.milvus_client import MilvusClient
 from pathlib import Path
+import os
 import logging
 from openai import OpenAI
 import os
@@ -26,8 +28,8 @@ class Sprint1Pipeline:
     """第一阶段：基础 RAG 管道"""
     
     def __init__(self):
-        self.pdf_parser = PDFParserAPI("./data/processed")  # 使用 API 解析器
         self.text_splitter = FinancialTextSplitter(chunk_size=512)
+        self.chunk_processor = ChunkProcessor(chunk_size=512)  # 🔥 新增
         self.milvus = MilvusClient("./data/milvus_lite.db")
         
         # SiliconFlow (Qwen 7B)
@@ -39,51 +41,39 @@ class Sprint1Pipeline:
     
     def ingest_pdfs(self, pdf_dir: str):
         """数据摄取：PDF解析 + 切分 + 入库"""
+        # 🔥 根据输入目录确定输出目录
+        
+        pdf_dir_path = Path(pdf_dir)
+        subfolder = pdf_dir_path.name  # "announcements" 或 "research_reports"
+        output_dir = f"./data/processed/{subfolder}"
+    
+        # 重新初始化 parser 使用正确的输出目录
+        self.pdf_parser = PDFParserAPI(output_dir)
         logger.info(f"\n{'='*60}")
-        logger.info("� Step 1: PDF 解析（MinerU）")
+        logger.info("📄 Step 1: PDF 解析（MinerU）")
         logger.info(f"{'='*60}")
         
-        # 1. 解析PDF
-        parsed_results = self.pdf_parser.batch_parse(pdf_dir)
+        # 1. 解析PDF (内置跳过逻辑)
+        parsed_results = self.pdf_parser.batch_parse(pdf_dir, skip_existing=True)
         
         if not parsed_results:
             logger.error("❌ 没有成功解析的PDF")
             return
         
-        # 2. 读取Markdown并切分
-        logger.info(f"\n{'='*60}")
-        logger.info("✂️  Step 2: 文本切分（TokenTextSplitter）")
-        logger.info(f"{'='*60}")
-        
-        all_chunks = []
-        for result in parsed_results:
-            md_path = result['markdown']
-            with open(md_path, 'r', encoding='utf-8') as f:
-                text = f.read()
-            
-            # 从 md_path 提取 PDF 原始文件名（目录名就是 PDF 文件名）
-            # 例如: data/processed/豫能控股_关于投资建设.../full.md
-            # 目录名: 豫能控股_关于投资建设...
-            pdf_name = Path(md_path).parent.name
-            
-            chunks = self.text_splitter.split_text(text)
-            for i, chunk in enumerate(chunks):
-                all_chunks.append({
-                    'text': chunk,
-                    'metadata': {'source': pdf_name},  # 使用 PDF 文件名
-                    'chunk_id': i
-                })
-        
+        # 2. 使用chunk_processor处理 (自动添加doc_type)
+        all_chunks = self.chunk_processor.process_parsed_results(parsed_results)
+
         # 3. 向量化并入库
         logger.info(f"\n{'='*60}")
         logger.info("🔢 Step 3: 向量化入库（BGE-M3 + Milvus）")
         logger.info(f"{'='*60}")
-        
+
         self.milvus.insert(all_chunks)
-        
+
         logger.info(f"\n✅ 数据摄取完成！")
         logger.info(f"   - 解析PDF: {len(parsed_results)} 个")
         logger.info(f"   - 生成chunks: {len(all_chunks)} 个")
+        
     
     def query(self, question: str) -> str:
         """朴素 RAG 查询"""
@@ -158,4 +148,13 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    pipeline = Sprint1Pipeline()
+    
+    # 🔥 修改：处理所有子文件夹
+    import os
+    base_dir = "./data/raw_pdfs"
+    for subfolder in ["announcements", "research_reports"]:  # 只处理有数据的文件夹
+        folder_path = os.path.join(base_dir, subfolder)
+        if os.path.exists(folder_path) and os.listdir(folder_path):
+            print(f"\n处理文件夹: {subfolder}")
+            pipeline.ingest_pdfs(folder_path)

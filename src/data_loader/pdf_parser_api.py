@@ -254,14 +254,17 @@ class PDFParserAPI:
             
             logger.info(f"📄 解析: {pdf_name[:40]}...")
             
-            # 1. 反查 URL
+            # 1. 尝试反查 URL（适用于 cninfo 公告）
             pdf_url = self._resolve_cninfo_pdf_url(pdf_path.name)
-            if not pdf_url:
-                logger.error(f"   ❌ 无法获取 PDF URL")
-                return None
             
-            # 2. 创建任务
-            task_id = self._create_task(pdf_url)
+            if pdf_url:
+                # 使用 URL 方式
+                task_id = self._create_task(pdf_url)
+            else:
+                # 🔥 使用文件上传方式（适用于研报等本地文件）
+                logger.info(f"   📤 使用文件上传方式...")
+                task_id = self._create_task_from_file(str(pdf_path))
+            
             if not task_id:
                 return None
             
@@ -328,3 +331,50 @@ class PDFParserAPI:
         
         logger.info(f"\n✅ 批量解析完成: {len(parsed_results)}/{len(pdf_files)} 个")
         return parsed_results
+
+    def _create_task_from_file(self, pdf_path: str) -> Optional[str]:
+        """通过文件上传创建 MinerU 解析任务"""
+        try:
+            # 1. 获取上传 URL
+            response = requests.post(
+                f"{self.api_base_url}/file-urls",
+                headers=self.headers,
+                json={"file_names": [Path(pdf_path).name]},
+                timeout=30
+            )
+            
+            if response.status_code != 200:
+                logger.error(f"   ❌ 获取上传URL失败: {response.text}")
+                return None
+            
+            result = response.json()
+            if result.get("code") != 0:
+                logger.error(f"   ❌ API 错误: {result.get('msg')}")
+                return None
+            
+            upload_info = result["data"]["file_urls"][0]
+            upload_url = upload_info["url"]
+            
+            # 2. 上传文件
+            with open(pdf_path, 'rb') as f:
+                upload_response = requests.put(upload_url, data=f, timeout=120)
+            
+            if upload_response.status_code not in [200, 201]:
+                logger.error(f"   ❌ 文件上传失败: {upload_response.status_code}")
+                return None
+            
+            logger.info(f"   ✅ 文件上传成功")
+            
+            # 3. 等待系统自动创建任务并返回 task_id
+            # MinerU 会自动扫描上传的文件并创建任务
+            task_id = upload_info.get("task_id")
+            if task_id:
+                return task_id
+            
+            # 如果没有立即返回 task_id，需要轮询获取
+            time.sleep(3)
+            return self._get_task_id_by_filename(Path(pdf_path).name)
+            
+        except Exception as e:
+            logger.error(f"   ❌ 文件上传异常: {e}")
+            return None

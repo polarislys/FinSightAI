@@ -73,13 +73,29 @@ class ChunkProcessor:
             if len(chunks) > 2:
                 logger.info(f"   - ... 还有 {len(chunks) - 2} 个块")
             
-            # 添加到总列表
+            # 需要修改的部分 (第77-86行)
             for i, chunk in enumerate(chunks):
+                # 🔥 新增：通过文件路径自动识别文档类型
+                file_path = str(md_path)  # md_path是解析后的markdown路径
+                
+                if "announcements" in file_path:
+                    doc_type = "announcement" 
+                elif "research_reports" in file_path:
+                    doc_type = "research_report"
+                elif "annual_reports" in file_path:
+                    doc_type = "annual_report"
+                elif "news" in file_path:
+                    doc_type = "news"
+                else:
+                    doc_type = "unknown"
+                
                 all_chunks.append({
                     'text': chunk,
                     'metadata': {
                         'source': source_name,
-                        'doc_index': idx - 1
+                        'doc_index': idx - 1,
+                        'doc_type': doc_type,        # 🔥 新增
+                        'file_path': file_path       # 🔥 新增，用于调试
                     },
                     'chunk_id': i
                 })
